@@ -40,10 +40,15 @@ L298P motorLeft(LEFT_MOTOR_DIRECTION, LEFT_MOTOR_PWM);
 
 //Constants and variable
 char dataIn = 'S';
-char determinant;
-char det;
-char prevDet = 'S';
+long distance;
 int vel = 255; //Max velocity
+char command = 'S';
+char lastCommand;
+int mode;
+int lastMode;
+
+
+char *modeNames[] = {"Manual", "Avoid obstacle ", "Wall follower"};
 
 void setup() {
   Serial.begin(9600); // set up Serial library at 9600 bps
@@ -53,9 +58,8 @@ void setup() {
   pinMode(ECHO_PIN, INPUT);// set the echo pin to input (recieve sound waves)  
 
   //Initalization messages
-  Serial.println(" Mr.robot");
-  Serial.println(" Reday for working!");
-  BtSerial.println(" Reday for working!");
+  //log_info(" Reday to go!");
+  BtSerial.println("  Reday to go!");
   
   //turn off motors
   motorRight.stop();
@@ -63,18 +67,62 @@ void setup() {
 }
 
 void loop() {
-  det = readCommand();
-  //serial code analysis
-  if (det != prevDet){
-    prevDet = det;
-  switch (det){
+
+  
+  command = readCommand();
+  if (isCommandChanged(lastCommand, command)) {
+    mode = defineMode(command);
+    if (isModeChanged(lastMode, mode)) {
+      //log_info ("  Mode activated: "+ modeNames[mode]);
+      BtSerial.print("  Mode activated: ");
+      BtSerial.println(modeNames[mode]);
+      Serial.println(modeNames[mode]);
+      lastMode = mode;
+    }
+  }
+
+  switch (mode) {
+    case 0:
+      manualStep(command);
+    break;
+    case 1: // avoid obstacle 
+      avoidStep(command);
+    break;
+    case 2: // wall follower
+      followStep(command);
+    break;
+  }
+
+  lastCommand = command;
+}
+
+int defineMode(char p_command) {
+  switch (p_command) {
+    case 'a': // avoid obstacle 
+      return 1; 
+    case 'w':
+      return 2; // wall follower
+    default:    // manual
+      return 0; 
+  }
+}
+
+bool isModeChanged (int p_last_mode, int p_mode) {
+  return p_mode != p_last_mode;
+}
+
+bool isCommandChanged (int p_lastCommand, int p_command) {
+  return p_command != p_lastCommand;
+}
+
+void manualStep(char p_command) {
+  switch (p_command){
     case 'F': // F, move forward
     motorRight.setSpeed(vel);
     motorLeft.setSpeed(vel);
     motorRight.forward();      
     motorLeft.forward();
     Serial.println("Run forward");
-    //det = readCommand();
     break;
     
     case 'B': // B, move back
@@ -83,7 +131,6 @@ void loop() {
     motorRight.backward();      
     motorLeft.backward();
     Serial.println("Run backward");
-    //det = readCommand();
     break;
     
     case 'L':// L, move wheels left
@@ -91,7 +138,6 @@ void loop() {
     motorLeft.setSpeed(vel/4);
     motorRight.run(FORWARD);      
     motorLeft.run(FORWARD);
-    det = readCommand();
     break;
     
     case 'R': // R, move wheels right
@@ -99,7 +145,6 @@ void loop() {
     motorLeft.setSpeed(vel);
     motorRight.run(FORWARD);      
     motorLeft.run(FORWARD);
-    det = readCommand();
     break;
     
     case 'I': // I, turn right forward
@@ -107,7 +152,6 @@ void loop() {
     motorLeft.setSpeed(vel);
     motorRight.run(FORWARD);      
     motorLeft.run(FORWARD);
-    det = readCommand();
     break;
     
     case 'J': // J, turn right back
@@ -115,7 +159,6 @@ void loop() {
     motorLeft.setSpeed(vel);  
     motorRight.run(BACKWARD);     
     motorLeft.run(BACKWARD);
-    //det = readCommand();
     break;
     
     case 'G': // G, turn left forward
@@ -123,7 +166,6 @@ void loop() {
     motorLeft.setSpeed(vel/2);
     motorRight.run(FORWARD);      
     motorLeft.run(FORWARD);
-    //det = readCommand();
     break;
     
     case 'H': // H, turn left back
@@ -131,150 +173,124 @@ void loop() {
     motorLeft.setSpeed(vel/2);
     motorRight.run(BACKWARD);     
     motorLeft.run(BACKWARD);
-    //det = readCommand();
     break;
     
     case 'S': 
    // S, stop
     motorRight.stop();
     motorLeft.stop();
-    //det = readCommand();
     break;
   }
-  }
-
-  switch (det){
-    case 'w':
-    
-   Serial.println(" Follow the wall mode");
-   BtSerial.println(" Follow the wall mode");
-   
-  //for wall follower robot.
-   motorRight.setSpeed(vel); //set the speed of the motors, between 0-255
-   motorLeft.setSpeed (vel); 
-
-  long duration, distance; // start the scan
-  //digitalWrite(trigPin, LOW);  
-  //delayMicroseconds(2); // delays are required for a succesful sensor operation.
-  //digitalWrite(trigPin, HIGH);
-
-  //delayMicroseconds(10); //this delay is required as well!
-  //digitalWrite(trigPin, LOW);
-  //duration = pulseIn(echoPin, HIGH);
-  //distance = (duration/2) / 29.1;// convert the distance to centimeters.
-  
-  distance = sonar.ping_cm();
-  Serial.println("distance "+distance);
-  
-  if (distance < 30)/*The distance that need to to keep with the wall */ {   
-Serial.println ("Wall is ditected!" );
-Serial.println (" Started following the wall ");
-Serial.println (" Turning !");
-   motorRight.setSpeed(vel);
-   motorLeft.stop();
-   motorRight.run(FORWARD);
-   delay(500); // wait for a second
 }
 
-  else {
-   Serial.println ("No Wall detected. turning round");
-   delay (15);
+
+
+void followStep(char p_command) {
+  motorRight.setSpeed(vel); //set the speed of the motors, between 0-255
+  motorLeft.setSpeed (vel); 
+
+  distance = sonar.ping_cm();
+  //log_debug("distance "+distance);
+  
+  if (distance < 30) /*The distance that need to to keep with the wall */ {   
+    //log_debug ("Wall is ditected. Turning to forllow the wall" );
+    
+    motorRight.setSpeed(vel);
+    motorLeft.stop();
+    motorRight.run(FORWARD);
+    delay(500); // wait for a second
+  } else {
+    //log_debug ("No Wall detected. turning round");
+    delay (15);
     motorRight.stop();
     motorLeft.setSpeed(vel); 
     motorLeft.run (FORWARD);
-
   }
-     break;
-     
-    case 'a':
+}
 
-   Serial.println(" obstacle avoider robot");
-   BtSerial.println(" obstacle avoider robot");
-  //obstacle avoider robot
-  
-   motorRight.setSpeed(vel); //set the speed of the motors, between 0-255
-   motorLeft.setSpeed (vel);  
- 
-  long Aduration, Adistance; // start the scan
-  //digitalWrite(trigPin, LOW);  
-  //delayMicroseconds(2); // delays are required for a succesful sensor operation.
-  //digitalWrite(trigPin, HIGH);
 
-  //delayMicroseconds(10); //this delay is required as well!
-  //digitalWrite(trigPin, LOW);
-  //Aduration = pulseIn(echoPin, HIGH);
-  //Adistance = (Aduration/2) / 29.1;// convert the distance to centimeters.
+void avoidStep(char p_command) {
   
-  Adistance = sonar.ping_cm();
-  Serial.println("distance "+Adistance);
+  motorRight.setSpeed(vel); //set the speed of the motors, between 0-255
+  motorLeft.setSpeed (vel);  
   
-  if (Adistance < 25)/*if there's an obstacle 25 centimers, ahead, do the following: */ {   
-  Serial.println ("Close Obstacle detected!" );
-  Serial.println ("Obstacle Details:");
-  Serial.print ("Distance From Robot is " );
-  Serial.print ( Adistance);
-  Serial.print ( " CM!");// print out the distance in centimeters.
+  distance = sonar.ping_cm();
+  //log_debug("distance "+ distance);
+  
+  if (distance < 25)/*if there's an obstacle 25 centimers, ahead, do the following: */ {   
+    //log_debug ("Close Obstacle detected!" );
+    //log_debug ("Obstacle distance: ");
+    //log_debug ("Distance From Robot is " + distance + " cm" );
 
-Serial.println (" The obstacle is declared a threat due to close distance. ");
-Serial.println (" Turning !");
     motorRight.setSpeed(vel);
     motorLeft.setSpeed(vel); 
     motorLeft.run(BACKWARD);  // Turn as long as there's an obstacle ahead.
     motorRight.run (FORWARD);
-
+  } else {
+    Serial.println ("No obstacle detected. going forward");
+    delay (15);
+    motorRight.setSpeed(vel);
+    motorLeft.setSpeed(vel);
+    motorRight.run(FORWARD); //if there's no obstacle ahead, Go Forward! 
+    motorLeft.run(FORWARD);  
+  } 
 }
-  else {
-   Serial.println ("No obstacle detected. going forward");
-   delay (15);
-   motorRight.setSpeed(vel);
-   motorLeft.setSpeed(vel);
-   motorRight.run(FORWARD); //if there's no obstacle ahead, Go Forward! 
-   motorLeft.run(FORWARD);  
 
-    } 
-   break;
-  }
-  
+/*
+void log_debug(char[] text) {
+  //log(text);  //debug disabled
 }
+
+void log_info(char[] text) {
+  log(text);
+}
+
+void log(char[] text) {
+  Serial.println(text);
+  BtSerial.println(text);
+} */
 
 //get bluetooth code received from serial port
 int readCommand(){
   //if (Serial.available() > 0){// if there is valid data in the serial port
   //dataIn = Serial.read();// stores data into a varialbe
 
-if (BtSerial.available()) {// if there is valid data in the serial port
-  dataIn = BtSerial.read();// stores data into a varialb
-   Serial.print("Command: ");
-   Serial.println(dataIn); 
+  //char command;
 
-//decode the command
+  if (BtSerial.available()) {// if there is valid data in the serial port
+    dataIn = BtSerial.read();// stores data into a varialb
+    
+    //log_debug("Input command: "+dataIn);
+
+    //decode the command
     if (dataIn == 'F'){//Forward
-      determinant = 'F';
+      command = 'F';
     }
     else if (dataIn == 'B'){//Backward
-      determinant = 'B';
+      command = 'B';
     }
     else if (dataIn == 'L'){//Left
-      determinant = 'L';
+      command = 'L';
     }
     else if (dataIn == 'R'){//Right
-      determinant = 'R';
+      command = 'R';
     }
     else if (dataIn == 'I'){//Froward Right
-      determinant = 'I';
+      command = 'I';
     }
     else if (dataIn == 'J'){//Backward Right
-      determinant = 'J';
+      command = 'J';
     }
     else if (dataIn == 'G'){//Forward Left
-      determinant = 'G';
+      command = 'G';
     }    
     else if (dataIn == 'H'){//Backward Left
-      determinant = 'H';
+      command = 'H';
     }
     else if (dataIn == 'S'){//Stop
-      determinant = 'S';
+      command = 'S';
     }
+    /*
     else if (dataIn == '0'){//Speed 0
       vel = 0;
     }
@@ -304,14 +320,16 @@ if (BtSerial.available()) {// if there is valid data in the serial port
     }
     else if (dataIn == '9'){//Speed 225
       vel = 225;
-    }   
+    } */   
     else if (dataIn == 'w'){//Extra On
-      determinant = 'w';
+      command = 'w';
     }
     else if (dataIn == 'a'){//Extra On
-      determinant = 'a';
+      command = 'a';
     }
 
   }
-  return determinant;
+
+  //log_debug("Decoded command: "+command);
+  return command;
 }
